@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 # Created with Python 3.6
 """
-Bayesian fully-connected feedforward neural network with stochastic inputs z.
-No liability assumed - tested only on regression tasks.
+Bayesian fully-connected feedforward neural network with stochastic inputs.
 Best viewed in the Spyder IDE.
 Make sure to:
     - shape training data as [no. of samples, sample-dimension]
     - shape training labels as [no. of samples, target-dimension]
     - specify the input layer size as no. of samples + 2 
-      to account for 1 bias and 1 stochastic input z
+      to account for 1 bias and 1 stochastic input
 """
 
 import autograd.numpy as np
