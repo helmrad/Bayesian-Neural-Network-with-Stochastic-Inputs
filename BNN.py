@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 # Created with Python 3.6
 """
-Bayesian fully-connected feedforward neural network with stochastic inputs.
+Bayesian fully-connected feedforward neural network with stochastic inputs z.
+No liability assumed - tested only on regression tasks.
 Best viewed in the Spyder IDE.
 Make sure to:
     - shape training data as [no. of samples, sample-dimension]
     - shape training labels as [no. of samples, target-dimension]
     - specify the input layer size as no. of samples + 2 
-      to account for 1 bias and 1 stochastic input
+      to account for 1 bias and 1 stochastic input z
 """
 
 import autograd.numpy as np
@@ -29,7 +30,7 @@ class BayesianNeuralNetwork:
         layer_sizes[-1] = layer_sizes[-1] + 1 # This facilitates weights initialization
         # Initialize weights and their prior variance
         self.w_m = []
-        self.w_v = []
+        self.w_v_log = []
         self.w_p_v = 1
         # Initialize random feature z's prior
         self.z_p_v = 2
@@ -42,13 +43,17 @@ class BayesianNeuralNetwork:
         # Initialize all but last layer's activation functions
         for i in range(0, len(layer_sizes)-1):
             w_m = np.zeros((layer_sizes[i], layer_sizes[i+1] - 1)) + np.random.uniform(-0.05,0.05, [layer_sizes[i], layer_sizes[i+1] - 1])
-            w_v = np.ones((layer_sizes[i], layer_sizes[i+1] - 1)) * 1e-3
+            w_v_log = np.ones((layer_sizes[i], layer_sizes[i+1] - 1)) * -10
             self.w_m.append(w_m)
-            self.w_v.append(w_v)
+            self.w_v_log.append(w_v_log)
             self.activations.append(ReLU)
         # Last layer activates trivially
         self.activations[-1] = TrLU
         layer_sizes[-1] = layer_sizes[-1] - 1 # Undo weights initialization facilitation
+        
+        # Set up logistic conversion methods for w_v and z_v
+        self.logistic_w = lambda w_v_log: [logistic(w_v_log[mesh]) for mesh in range(0,len(w_v_log))]
+        self.logistic_z = logistic
         
         # Initialize standardization parameters
         self.x_mean = []
@@ -210,9 +215,9 @@ class BayesianNeuralNetwork:
         
         # Unpack parameters
         w_m = tbo_pars[0]
-        w_v = tbo_pars[1]
+        w_v = self.logistic_w(tbo_pars[1])
         z_m = tbo_pars[2]
-        z_v = tbo_pars[3]
+        z_v = self.logistic_z(tbo_pars[3])
         e_v = tbo_pars[4]
         # Generate deterministic neural networks and feature noise
         zs  = self.sample_zs(z_m, z_v, N)
@@ -301,7 +306,7 @@ class BayesianNeuralNetwork:
         N = x.shape[0]
         # Initialize array of random feature means and variances to fit
         z_m = np.zeros((x.shape[0],1))
-        z_v = np.ones((x.shape[0],1)) + np.random.uniform(-0.1,0.1, [x.shape[0], 1])
+        z_v_log = np.ones((x.shape[0],1)) * 10
         # Declare MSE
         self.MSE = lambda: np.mean(np.square(y - np.mean(self.execute(x), axis = 0)))
         
@@ -311,11 +316,11 @@ class BayesianNeuralNetwork:
         # Declare gradient of energy wrt parameters to-be-optimized
         self.energy_grad = grad(self.energy, 0)
         # Wrap to-be-optimized parameters and optimize
-        tbo_pars = [self.w_m, self.w_v, z_m, z_v, self.e_v]
+        tbo_pars = [self.w_m, self.w_v_log, z_m, z_v_log, self.e_v]
         tbo_pars, tbo_pars_iter = self.adam_deluxe(tbo_pars)
         # Reassign parameters
         self.w_m = tbo_pars[0]
-        self.w_v = tbo_pars[1]
+        self.w_v_log = tbo_pars[1]
         self.e_v = tbo_pars[4]
         # Return course of parameter optimization
         return tbo_pars_iter
@@ -329,7 +334,8 @@ class BayesianNeuralNetwork:
         z_v = np.ones((N, 1)) * self.z_p_v
         zs = self.sample_zs(z_m, z_v, N)
         # Sample K deterministic neural networks
-        NNs = self.sample_NNs(self.w_m, self.w_v)
+        w_v = self.logistic_w(self.w_v_log)
+        NNs = self.sample_NNs(self.w_m, w_v)
         # Sample K x N times additive noise e
         es = self.sample_es(self.e_v, N)
         
@@ -351,7 +357,7 @@ class BayesianNeuralNetwork:
         NN_params.append(self.activations)
         NN_params.append(self.z_p_v)
         NN_params.append(self.w_m)
-        NN_params.append(self.w_v)
+        NN_params.append(self.w_v_log)
         NN_params.append(self.e_v)
         NN_params.append(self.x_mean)
         NN_params.append(self.x_std)
@@ -387,6 +393,11 @@ def tanh(o):
     return out
 
 
+# Logistic Function 
+def logistic(x):
+    return 1/(1+np.exp(-x))
+
+
 # Deterministic neural network
 class DNN:
     
@@ -418,7 +429,7 @@ def load_BNN(fname):
         BNNET.activations   = NN_params[1]
         BNNET.z_p_v         = NN_params[2]
         BNNET.w_m           = NN_params[3]
-        BNNET.w_v           = NN_params[4]
+        BNNET.w_v_log       = NN_params[4]
         BNNET.e_v           = NN_params[5]
         BNNET.x_mean        = NN_params[6]
         BNNET.x_std         = NN_params[7]
@@ -484,11 +495,11 @@ def fit_bimodal_distribution():
     layer_sizes = [x_o.shape[1]+2, 10, 10, y_o.shape[1]]
     net = BayesianNeuralNetwork(layer_sizes)
     net.step_size = 0.001
-    net.epochs = 5000
+    net.epochs = 15000
     x, y = net.standardize(x_o, y_o)
     
     # Train
-    _ = net.train(x, y)
+    tbo_pars_iter = net.train(x, y)
     # Execute
     out = net.execute(x)
     # Unstandardize the network output
@@ -503,11 +514,12 @@ def fit_bimodal_distribution():
     plt.legend(fontsize = 20, loc = 'upper left')
     plt.tick_params(axis='both', which='major', labelsize = 20)
     
+    return tbo_pars_iter
     
 if __name__ == "__main__":
     print("Hi!")
     print("Example application: fit a Bayesian neural network to a bimodal distribution.")
     time.sleep(3)
     print("See the plot that pops up. \n")
-    fit_bimodal_distribution()
+    tbo_pars_iter = fit_bimodal_distribution()
 
