@@ -2,4 +2,4 @@ This code generates a Bayesian feedforward fully-connected neural network. Given
 
 The weights of the neural network, described by a parameterized multidimensional probability distribution, and the aforementioned stochastic inputs are trained by Bayesian inference. In particular, black-box alpha-divergence minimization is used [Hernández-Lobato et al. 2015] to fit the parameters to a dataset. The code is tailored to Python 3.6 and requires the library autograd.
 
-When executed, the code automatically starts to fit a Bayesian neural network to resemble a bimodal sinusoid distribution.
+When executed, the code automatically starts to fit a Bayesian neural network to a bimodal sinusoid distribution.
